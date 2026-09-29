@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Terra Nova · 泰拉式 2D 沙盒生存</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden; background: #05060c;
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    color: #e8e6df; -webkit-font-smoothing: none; user-select: none;
+  }
+  #game { display: block; width: 100%; height: 100%; cursor: none; image-rendering: pixelated; }
+  #ui { position: fixed; inset: 0; pointer-events: none; }
+
+  /* ---------- 通用面板 ---------- */
+  .panel {
+    position: absolute; background: rgba(18, 17, 26, .94);
+    border: 3px solid #6d6a7d; border-radius: 4px;
+    box-shadow: 0 0 0 3px rgba(0,0,0,.75), 0 10px 40px rgba(0,0,0,.6);
+    color: #ded9c8; font-size: 13px; pointer-events: auto;
+  }
+  .panel h3 {
+    font-size: 14px; letter-spacing: 2px; text-align: center; color: #f0d9a0;
+    background: linear-gradient(#4b4664, #322e46); margin: -3px -3px 8px; padding: 7px 0;
+    border-bottom: 3px solid #6d6a7d; font-weight: 700;
+  }
+  .hidden { display: none !important; }
+
+  /* ---------- 物品格 ---------- */
+  .grid { display: grid; gap: 4px; }
+  .slot {
+    width: 44px; height: 44px; background: #221f30; border: 2px solid #4a4560;
+    border-radius: 3px; position: relative; cursor: pointer;
+  }
+  .slot:hover { border-color: #c8b273; background: #2c2840; }
+  .slot img { position: absolute; inset: 6px; width: 32px; height: 32px; image-rendering: pixelated; pointer-events: none; }
+  .slot .n {
+    position: absolute; right: 2px; bottom: 0; font-size: 12px; font-weight: 700;
+    color: #fff; text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000; pointer-events: none;
+  }
+  .slot .q { position: absolute; inset: 0; box-shadow: inset 0 0 0 2px #f0d9a0; border-radius: 2px; pointer-events: none; }
+  .slot.fav { border-color: #8a7fb0; }
+
+  /* ---------- 背包 ---------- */
+  #invPanel { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 10px 12px; }
+  #invPanel .row { display: flex; gap: 14px; align-items: flex-start; }
+  #invCol { display: flex; flex-direction: column; gap: 6px; }
+  #hotbarRow { display: flex; gap: 4px; }
+  #craftCol { width: 306px; max-height: 452px; overflow-y: auto; padding-right: 4px; }
+  #craftCol::-webkit-scrollbar { width: 8px; }
+  #craftCol::-webkit-scrollbar-thumb { background: #4a4560; border-radius: 4px; }
+  .recipe {
+    display: flex; align-items: center; gap: 8px; padding: 5px 6px; margin-bottom: 4px;
+    background: #221f30; border: 2px solid #4a4560; border-radius: 3px; cursor: pointer;
+  }
+  .recipe:hover { border-color: #c8b273; background: #2c2840; }
+  .recipe.off { opacity: .42; }
+  .recipe img { width: 32px; height: 32px; image-rendering: pixelated; }
+  .recipe .nm { flex: 1; font-size: 12px; line-height: 1.35; }
+  .recipe .nm small { color: #9b95ad; font-size: 11px; }
+  .recipe .ok { color: #8fe08a; font-size: 11px; }
+  .recipe .no { color: #e07a7a; font-size: 11px; }
+  .sect { font-size: 12px; color: #c8b273; margin: 8px 0 5px; letter-spacing: 1px; }
+  .tag { display:inline-block; font-size:10px; padding:1px 5px; border-radius:3px; background:#3b3652; color:#cfc6a5; margin-left:4px;}
+
+  /* ---------- 提示 ---------- */
+  #tip {
+    position: absolute; padding: 6px 10px; background: rgba(10,10,16,.92);
+    border: 2px solid #6d6a7d; border-radius: 4px; font-size: 12.5px; pointer-events: none;
+    max-width: 260px; line-height: 1.5;
+  }
+  #tip b { color: #f0d9a0; }
+  #tip .d { color: #9b95ad; font-size: 11.5px; display: block; margin-top: 3px; }
+  #tip .st { color: #7fc7e0; font-size: 11.5px; }
+
+  #toast {
+    position: absolute; left: 50%; top: 14%; transform: translateX(-50%);
+    font-size: 17px; font-weight: 700; color: #fff; text-shadow: 2px 2px 0 #000, 0 0 12px #000;
+    opacity: 0; transition: opacity .35s; text-align: center; letter-spacing: 1px;
+  }
+  #banner {
+    position: absolute; left: 50%; top: 26%; transform: translateX(-50%);
+    font-size: 26px; font-weight: 800; color: #ff6a5a; text-align: center;
+    text-shadow: 3px 3px 0 #2b0a06, 0 0 26px #a01808; opacity: 0; transition: opacity .6s; letter-spacing: 3px;
+  }
+
+  /* ---------- 全屏遮罩 ---------- */
+  #screen {
+    position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(20,24,50,.86), rgba(4,5,12,.97));
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    pointer-events: auto; text-align: center;
+  }
+  #screen h1 { font-size: 46px; letter-spacing: 6px; color: #f3d79a; text-shadow: 4px 4px 0 #2a1d10, 0 0 34px rgba(255,190,90,.35); }
+  #screen h2 { font-size: 20px; letter-spacing: 3px; color: #d8cfb4; }
+  #screen p { font-size: 13.5px; color: #a49db4; line-height: 1.9; max-width: 640px; }
+  .btn {
+    padding: 10px 30px; font-size: 16px; letter-spacing: 2px; cursor: pointer; color: #f0e6c8;
+    background: linear-gradient(#5b5077, #3a3452); border: 3px solid #8a7fb0; border-radius: 5px;
+    font-family: inherit;
+  }
+  .btn:hover { background: linear-gradient(#6e6192, #474063); border-color: #f0d9a0; }
+  .btn.sm { padding: 7px 18px; font-size: 13px; }
+  .keys { display: grid; grid-template-columns: auto auto; gap: 3px 14px; font-size: 12.5px; color: #9b95ad; margin-top: 4px; }
+  .keys b { color: #e8dfc4; font-weight: 600; }
+  #deadScreen h1 { color: #ff7a6a; text-shadow: 4px 4px 0 #2b0a06, 0 0 34px rgba(220,60,40,.4); }
+  .fade { animation: fin .6s ease-out; }
+  @keyframes fin { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="ui">
+  <div id="banner"></div>
+  <div id="toast"></div>
+  <div id="tip" class="hidden"></div>
+
+  <div id="invPanel" class="panel hidden">
+    <h3 id="invTitle">物品栏</h3>
+    <div class="row">
+      <div id="invCol">
+        <div id="invGrid" class="grid"></div>
+        <div id="hotbarRow"></div>
+      </div>
+      <div id="craftCol"></div>
+    </div>
+  </div>
+
+  <div id="screen">
+    <h1>TERRA NOVA</h1>
+    <h2>挖掘 · 建造 · 生存</h2>
+    <p>一个程序化生成的 2D 侧视沙盒世界。徒手挖开地表，砍树取木，造熔炉炼铜铁金，<br>
+       做出镐斧剑，挖矿盖房——因为太阳落山之后，地表会站满僵尸。</p>
+    <div class="keys">
+      <b>A / D · ← →</b><span>移动</span>
+      <b>空格 / W / ↑</b><span>跳跃（S 键下木平台）</span>
+      <b>鼠标左键</b><span>挖掘 / 攻击（可长按）</span>
+      <b>鼠标右键</b><span>放置 / 使用 / 开门开箱</span>
+      <b>1 ~ 0 / 滚轮</b><span>切换快捷栏</span>
+      <b>E</b><span>物品栏 & 合成（靠近工作台解锁更多配方）</span>
+      <b>F</b><span>切换小地图　　M 静音　　Esc 暂停</span>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn" id="btnNew">开始新世界</button>
+      <button class="btn sm hidden" id="btnLoad">继续存档</button>
+    </div>
+    <p style="font-size:11.5px;opacity:.6">纯前端 · 无需联网 · 存档自动保存在浏览器本地</p>
+  </div>
+
+  <div id="deadScreen" class="hidden" style="position:absolute;inset:0;background:rgba(60,8,6,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;backdrop-filter:blur(2px)">
+    <h1 style="font-size:38px;letter-spacing:5px;color:#ff8a78;text-shadow:4px 4px 0 #2b0a06">你 死 了</h1>
+    <p id="deadMsg" style="color:#e8c9b6;font-size:15px"></p>
+    <button class="btn" id="btnRespawn">在出生点复活</button>
+  </div>
+</div>
+
+<script src="js/core.js?v=22"></script>
+<script src="js/tiles.js?v=22"></script>
+<script src="js/world.js?v=22"></script>
+<script src="js/entities.js?v=22"></script>
+<script src="js/render.js?v=22"></script>
+<script src="js/ui.js?v=22"></script>
+<script src="js/main.js?v=22"></script>
+</body>
+</html>
